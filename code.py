@@ -1,22 +1,8 @@
 import streamlit as st
-import sqlite3
 from streamlit_option_menu import option_menu
 import networkx as nx
 import matplotlib.pyplot as plt
-
-# Tạo kết nối đến cơ sở dữ liệu SQLite
-def get_db_connection():
-    conn = sqlite3.connect('goals.db')
-    c = conn.cursor()
-    c.execute(''' SELECT count(name) FROM sqlite_master WHERE type='table' AND name='goals' ''')
-    if c.fetchone()[0] == 0:
-        c.execute('''CREATE TABLE goals
-                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                      level TEXT,
-                      content TEXT,
-                      parent_id INTEGER)''')
-        conn.commit()
-    return conn
+import io
 
 def create_goal_tree(low_goals, mid_goals, high_goal):
     # Initialize a directed graph
@@ -55,8 +41,6 @@ def plot_goal_tree(G):
 
     # Allocate positions for low-level goals
     low_level_nodes = [n for n in G if n.startswith('L')]
-    
-    # Collect parent-child relationships for calculation
     for mid_index, mid_node in enumerate(mid_level_nodes):
         connected_low_nodes = [n for n in low_level_nodes if G.has_edge(n, mid_node)]
         num_low = len(connected_low_nodes)
@@ -79,52 +63,6 @@ def plot_goal_tree(G):
     
     plt.title("Goal Tree Visualization")
     st.pyplot(plt)
-
-
-
-
-
-def save_goals(high_goal, mid_goals, low_goals_mapping):
-    conn = get_db_connection()
-    c = conn.cursor()
-    
-    # Xóa tất cả mục tiêu cũ
-    c.execute("DELETE FROM goals")
-    
-    # Lưu mục tiêu cấp cao
-    c.execute("INSERT INTO goals (level, content) VALUES (?, ?)", ('high', high_goal))
-    high_id = c.lastrowid
-    
-    # Lưu mục tiêu cấp trung và cấp thấp
-    for i, mid_goal in enumerate(mid_goals):
-        c.execute("INSERT INTO goals (level, content, parent_id) VALUES (?, ?, ?)", ('mid', mid_goal, high_id))
-        mid_id = c.lastrowid
-        
-        # Lưu mục tiêu cấp thấp
-        for low_goal in low_goals_mapping.get(i, []):
-            c.execute("INSERT INTO goals (level, content, parent_id) VALUES (?, ?, ?)", ('low', low_goal, mid_id))
-    
-    conn.commit()
-    conn.close()
-
-def load_goals():
-    conn = get_db_connection()
-    c = conn.cursor()
-    
-    c.execute("SELECT * FROM goals WHERE level='high'")
-    high_goal_row = c.fetchone()
-    high_goal = high_goal_row[2] if high_goal_row else ""
-    
-    c.execute("SELECT * FROM goals WHERE level='mid'")
-    mid_goals = [row[2] for row in c.fetchall()]
-    
-    low_goals_mapping = {}
-    for i, mid_goal in enumerate(mid_goals):
-        c.execute("SELECT * FROM goals WHERE level='low' AND parent_id=(SELECT id FROM goals WHERE level='mid' AND content=?)", (mid_goal,))
-        low_goals_mapping[i] = [row[2] for row in c.fetchall()]
-    
-    conn.close()
-    return high_goal, mid_goals, low_goals_mapping
 
 def set_page_style():
     st.set_page_config(
@@ -193,44 +131,115 @@ def home_page():
         """
     )
 
+def plot_goal_tree(G):
+    plt.figure(figsize=(10, 6))
+
+    pos = {}
+    level_positions = {"H": (0.5, 1)}
+
+    # Number of mid-level goals
+    mid_level_nodes = sorted(n for n in G if n.startswith('M'))
+    num_mid = len(mid_level_nodes)
+
+    # Allocate positions for mid-level goals
+    for i, mid_node in enumerate(mid_level_nodes):
+        pos[mid_node] = ((i + 1) / (num_mid + 1), 0.65)
+
+    # Allocate positions for low-level goals
+    low_level_nodes = [n for n in G if n.startswith('L')]
+    for mid_index, mid_node in enumerate(mid_level_nodes):
+        connected_low_nodes = [n for n in low_level_nodes if G.has_edge(n, mid_node)]
+        num_low = len(connected_low_nodes)
+        for j, low_node in enumerate(connected_low_nodes):
+            # Calculate position to avoid overlap
+            if num_low > 1:
+                pos[low_node] = ((mid_index + 1 + (j + 1) / (num_low + 1) - 0.5 / (num_low + 1)) / (num_mid + 1), 0.30)
+            else:
+                pos[low_node] = (pos[mid_node][0], 0.30)
+    
+    # Set the high-level goal position
+    pos['H'] = level_positions["H"]
+
+    labels = nx.get_node_attributes(G, 'label')
+
+    # Draw the nodes and edges
+    nx.draw(G, pos, labels=labels, with_labels=True, 
+            node_size=3000, node_color='lightblue', 
+            font_size=10, font_weight='bold', edge_color='gray')
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    plt.close()
+    return buf
+
 def goals_page():
-    # Load existing goals
-    high_goal, mid_goals, low_goals_mapping = load_goals()
+    if "high_goal" not in st.session_state:
+        st.session_state.high_goal = ""
+    if "mid_goals" not in st.session_state:
+        st.session_state.mid_goals = []
+    if "low_goals_mapping" not in st.session_state:
+        st.session_state.low_goals_mapping = {}
+    if "all_low_goals" not in st.session_state:
+        st.session_state.all_low_goals = []
 
     col1, col2 = st.columns([1, 2])
 
     with col1:
         st.subheader("Goal Input")
         
-        high_level_goal = st.text_input("Your High-level Goal:", value=high_goal, placeholder="Enter your life objective")
+        high_level_goal = st.text_input(
+            "Your High-level Goal:",
+            value=st.session_state.high_goal,
+            placeholder="Enter your life objective"
+        )
         
-        mid_level_inputs = st.text_area("Your Mid-level Goals:", value="\n".join(mid_goals), placeholder="Enter one goal per line")
+        mid_level_inputs = st.text_area(
+            "Your Mid-level Goals:",
+            value="\n".join(st.session_state.mid_goals),
+            placeholder="Enter one goal per line"
+        )
         mid_level_goals = [goal for goal in mid_level_inputs.split("\n") if goal]
         
-        all_low_goals = [item for sublist in low_goals_mapping.values() for item in sublist]
-        low_level_inputs = st.text_area("Your Low-level Goals:", value="\n".join(all_low_goals), placeholder="Enter one task per line")
+        low_level_inputs = st.text_area(
+            "Your Low-level Goals:",
+            value="\n".join(st.session_state.all_low_goals),
+            placeholder="Enter one task per line"
+        )
         low_level_goals = [goal for goal in low_level_inputs.split("\n") if goal]
+
+        st.session_state.all_low_goals = low_level_goals
 
         if mid_level_goals:
             st.subheader("Link Low-level Goals to Mid-level Goals")
             for i, mid_goal in enumerate(mid_level_goals):
                 selected_low_goals = st.multiselect(
                     f"Select low-level goals for: {mid_goal}",
-                    options=low_level_goals,
-                    default=low_goals_mapping.get(i, []),
+                    options=st.session_state.all_low_goals,
+                    default=st.session_state.low_goals_mapping.get(i, []),
                     key=f"low_for_mid_{i}"
                 )
-                low_goals_mapping[i] = selected_low_goals
-
-        if st.button("Save Goals", key="save_goals"):
-            save_goals(high_level_goal, mid_level_goals, low_goals_mapping)
-            st.success("Goals saved successfully!")
+                st.session_state.low_goals_mapping[i] = selected_low_goals
 
     with col2:
         st.subheader("Goal Tree Visualization")
         if high_level_goal and mid_level_goals:
-            G = create_goal_tree(low_goals_mapping, mid_level_goals, high_level_goal)
-            plot_goal_tree(G)
+            # Create the goal tree
+            G = create_goal_tree(st.session_state.low_goals_mapping, mid_level_goals, high_level_goal)
+            
+            # Plot and get the graph image buffer
+            img_buffer = plot_goal_tree(G)
+
+            # Display the goal tree
+            st.image(img_buffer, caption='Goal Tree', use_column_width=True)
+            
+            # Provide a download button for the PNG image of the graph
+            st.download_button(
+                label="Download Goal Tree as PNG",
+                data=img_buffer,
+                file_name="goal_tree.png",
+                mime="image/png"
+            )
         else:
             st.info("Enter a high-level goal and at least one mid-level goal to see the goal tree.")
 
