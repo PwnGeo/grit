@@ -1,4 +1,5 @@
-streamlit==1.13.0
-graphviz==0.19.1
-sqlite3-api==2.6.0
+streamlit==1.28.0
+networkx==3.0
+matplotlib==3.7.2
 streamlit-option-menu==0.3.2
+sqlite3
