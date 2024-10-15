@@ -122,12 +122,14 @@ def set_page_style():
 
 def sidebar():
     with st.sidebar:
-        # st.image("https://your-logo-url.com/logo.png", width=200)
+        st.image("https://miraway.vn/images/logo.png", width=200)
         st.markdown('<p class="big-font">Grit Platform</p>', unsafe_allow_html=True)
         menu = option_menu(
             menu_title=None,
-            options=["Home", "Goals", "Analytics", "Settings"],
-            icons=["house", "bullseye", "graph-up", "gear"],
+            # options=["Home", "Goals", "Analytics", "Settings"],
+            # icons=["house", "bullseye", "graph-up", "gear"],
+            options=["Home", "Goals"],
+            icons=["house", "bullseye"],            
             menu_icon="cast",
             default_index=0,
         )
@@ -191,13 +193,13 @@ def goals_page():
         else:
             st.info("Enter a high-level goal and at least one mid-level goal to see the goal tree.")
 
-def analytics_page():
-    st.subheader("Goal Analytics")
-    st.write("This feature is coming soon. It will provide insights into your goal progress and achievements.")
+# def analytics_page():
+    # st.subheader("Goal Analytics")
+    # st.write("This feature is coming soon. It will provide insights into your goal progress and achievements.")
 
-def settings_page():
-    st.subheader("Settings")
-    st.write("Customize your Grit Platform experience here. More options will be available in future updates.")
+# def settings_page():
+    # st.subheader("Settings")
+    # st.write("Customize your Grit Platform experience here. More options will be available in future updates.")
 
 def main():
     set_page_style()
